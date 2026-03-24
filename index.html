@@ -236,7 +236,8 @@
                 <span class="highlight-warning">Aviso:</span> Pegar com a mão da cor errada tira -5 pontos e zera seu Combo!<br><br>
                  Evite as <span class="highlight-danger">Bombas Vermelhas</span> (-30 pontos + Tremor de Tela). Junte as mãos para ativar o <strong>Escudo</strong>.<br><br>
                 <strong>⚡ POWER-UPS (Pegue com qualquer mão):</strong><br>
-                ⭐ <strong>Estrela:</strong> +50 Pontos | ⏳ <strong>Relógio:</strong> Câmera Lenta | ❤️ <strong>Coração:</strong> Recupera 1 Vida | 🧲 <strong>Ímã:</strong> Atrai Bolinhas
+                ⭐ <strong>Estrela:</strong> +50 Pontos | ⏳ <strong>Relógio:</strong> Câmera Lenta | ❤️ <strong>Coração:</strong> Recupera 1 Vida | 🧲 <strong>Ímã:</strong> Atrai Bolinhas<br><br>
+                🔊 <strong>Áudio:</strong> O jogo possui sons! Certifique-se de ter a pasta <code>sounds</code> configurada.
             </p>
             <button id="start-btn" class="btn" disabled>Aguardando Câmera...</button>
             <div id="loading-text" class="loading-text">Carregando IA de visão computacional...</div>
@@ -275,6 +276,57 @@
         const finalScoreEl = document.getElementById('final-score');
         const finalLevelEl = document.getElementById('final-level');
         const loadingText = document.getElementById('loading-text');
+
+        // ==========================================
+        // CARREGAMENTO DE IMAGENS (ASSETS)
+        // ==========================================
+        const assets = {
+            green_bonus: new Image(),
+            blue_bonus: new Image(),
+            bomb: new Image(),
+            star: new Image(),
+            slow: new Image(),
+            heart: new Image(),
+            magnet: new Image()
+        };
+        
+        // Caminho das imagens (você deve colocar as fotos na pasta 'assets')
+        assets.green_bonus.src = 'assets/verde.png';
+        assets.blue_bonus.src = 'assets/azul.png';
+        assets.bomb.src = 'assets/bomba.png';
+        assets.star.src = 'assets/estrela.png';
+        assets.slow.src = 'assets/relogio.png';
+        assets.heart.src = 'assets/vida.png';
+        assets.magnet.src = 'assets/ima.png';
+
+        // ==========================================
+        // CARREGAMENTO DE SONS (AUDIO)
+        // ==========================================
+        const sounds = {
+            bgm: new Audio('sounds/trilha.mp3'),
+            green_bonus: new Audio('sounds/verde.mp3'),
+            blue_bonus: new Audio('sounds/azul.mp3'),
+            bomb: new Audio('sounds/bomba.mp3'),
+            star: new Audio('sounds/estrela.mp3'),
+            slow: new Audio('sounds/relogio.mp3'),
+            heart: new Audio('sounds/vida.mp3'),
+            magnet: new Audio('sounds/ima.mp3'),
+            error: new Audio('sounds/erro.mp3') // Som para toque com a mão errada
+        };
+
+        // Configurações da trilha sonora (looping)
+        sounds.bgm.loop = true;
+        sounds.bgm.volume = 0.3; // Volume da música mais baixo para destacar os efeitos sonoros
+
+        function playSound(soundKey) {
+            const sound = sounds[soundKey];
+            if (sound) {
+                // Clonamos o nó para permitir que o som se sobreponha (ex: pegar 3 itens quase juntos)
+                const clone = sound.cloneNode();
+                clone.volume = 0.8; // Volume dos efeitos sonoros
+                clone.play().catch(err => console.warn("Áudio não pôde ser reproduzido:", err));
+            }
+        }
 
         // Variáveis de Estado do Jogo
         let isGameRunning = false;
@@ -477,6 +529,23 @@
             }
 
             draw(ctx) {
+                const img = assets[this.type];
+                
+                // Se a imagem existir e já tiver sido carregada com sucesso
+                if (img && img.complete && img.naturalWidth !== 0) {
+                    ctx.drawImage(img, this.x - this.radius, this.y - this.radius, this.radius * 2, this.radius * 2);
+                    
+                    // Adiciona um leve brilho por cima das bolinhas normais para manter o "Juiciness"
+                    if (this.type === 'green_bonus' || this.type === 'blue_bonus') {
+                        ctx.beginPath();
+                        ctx.arc(this.x - this.radius/3, this.y - this.radius/3, this.radius / 4, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.fill();
+                    }
+                    return; // Retorna para NÃO desenhar os gráficos antigos
+                }
+
+                // --- FALLBACK (Caso a imagem não seja encontrada, desenha as formas antigas) ---
                 if (this.type === 'green_bonus' || this.type === 'blue_bonus') {
                     ctx.beginPath();
                     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
@@ -653,6 +722,7 @@
 
         function endGame() {
             isGameRunning = false;
+            sounds.bgm.pause(); // Para a trilha sonora imediatamente
             hudContainer.classList.add('hidden');
             gameOverScreen.classList.remove('hidden');
             finalScoreEl.innerText = score;
@@ -672,6 +742,11 @@
             startScreen.classList.add('hidden');
             gameOverScreen.classList.add('hidden');
             hudContainer.classList.remove('hidden');
+            
+            // Inicia a Trilha Sonora do começo
+            sounds.bgm.currentTime = 0;
+            sounds.bgm.play().catch(err => console.warn("Interação necessária para tocar áudio", err));
+            
             gameLoop();
         }
 
@@ -747,6 +822,7 @@
                                     if (comboCount % 5 === 0) comboMultiplier++;
                                     let points = 10 * comboMultiplier;
                                     score += points;
+                                    playSound(obj.type); // Toca o som de pegar a bolinha
                                     floatingTexts.push(new FloatingText(obj.x, obj.y, `+${points}`, hitColor));
                                     createExplosion(obj.x, obj.y, hitColor);
                                 } else {
@@ -754,6 +830,7 @@
                                     hit = true; hitColor = '#FF9800'; 
                                     score -= 5;
                                     comboCount = 0; comboMultiplier = 1;
+                                    playSound('error'); // Toca som de erro
                                     floatingTexts.push(new FloatingText(obj.x, obj.y, "-5 (ERRO!)", hitColor));
                                     createExplosion(obj.x, obj.y, hitColor);
                                 }
@@ -764,6 +841,7 @@
                                 comboCount = 0; comboMultiplier = 1;
                                 shakeTime = 40; 
                                 bombWipeTimer = 30; // 30 frames de Flash e Wipe
+                                playSound('bomb'); // Toca som da bomba
                                 
                                 // MEGA EXPLOSÃO: Apaga tudo da tela!
                                 gameObjects.forEach(o => o.markedForDeletion = true);
@@ -772,6 +850,7 @@
                             }
                             else {
                                 hit = true;
+                                playSound(obj.type); // Toca o som do respectivo power-up dinamicamente
                                 if (obj.type === 'star') {
                                     hitColor = '#FFEB3B';
                                     let points = 50 * comboMultiplier;
@@ -866,18 +945,27 @@
                 
                 canvasCtx.save();
                 canvasCtx.globalAlpha = giantHeartTimer / 60; // Fade out no final
-                canvasCtx.beginPath();
-                canvasCtx.moveTo(centerX, centerY + s/4);
-                canvasCtx.quadraticCurveTo(centerX, centerY - s/2, centerX - s/1.2, centerY - s/2);
-                canvasCtx.quadraticCurveTo(centerX - s*1.5, centerY - s/2, centerX - s, centerY + s/3);
-                canvasCtx.quadraticCurveTo(centerX - s/2, centerY + s, centerX, centerY + s*1.2);
-                canvasCtx.quadraticCurveTo(centerX + s/2, centerY + s, centerX + s, centerY + s/3);
-                canvasCtx.quadraticCurveTo(centerX + s*1.5, centerY - s/2, centerX + s/1.2, centerY - s/2);
-                canvasCtx.quadraticCurveTo(centerX, centerY - s/2, centerX, centerY + s/4);
-                canvasCtx.fillStyle = '#E91E63';
-                canvasCtx.shadowColor = '#FF4081';
-                canvasCtx.shadowBlur = 50;
-                canvasCtx.fill();
+                
+                if (assets.heart.complete && assets.heart.naturalWidth !== 0) {
+                    // Desenha a imagem png da Vida gigante
+                    canvasCtx.shadowColor = '#FF4081';
+                    canvasCtx.shadowBlur = 50;
+                    canvasCtx.drawImage(assets.heart, centerX - s, centerY - s, s * 2, s * 2);
+                } else {
+                    // Fallback: Desenha a forma do coração antiga
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(centerX, centerY + s/4);
+                    canvasCtx.quadraticCurveTo(centerX, centerY - s/2, centerX - s/1.2, centerY - s/2);
+                    canvasCtx.quadraticCurveTo(centerX - s*1.5, centerY - s/2, centerX - s, centerY + s/3);
+                    canvasCtx.quadraticCurveTo(centerX - s/2, centerY + s, centerX, centerY + s*1.2);
+                    canvasCtx.quadraticCurveTo(centerX + s/2, centerY + s, centerX + s, centerY + s/3);
+                    canvasCtx.quadraticCurveTo(centerX + s*1.5, centerY - s/2, centerX + s/1.2, centerY - s/2);
+                    canvasCtx.quadraticCurveTo(centerX, centerY - s/2, centerX, centerY + s/4);
+                    canvasCtx.fillStyle = '#E91E63';
+                    canvasCtx.shadowColor = '#FF4081';
+                    canvasCtx.shadowBlur = 50;
+                    canvasCtx.fill();
+                }
                 
                 canvasCtx.fillStyle = 'white';
                 canvasCtx.font = 'bold 45px "Segoe UI"';
