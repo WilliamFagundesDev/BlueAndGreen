@@ -63,7 +63,7 @@
             justify-content: space-between;
             align-items: flex-start;
             z-index: 5;
-            pointer-events: none; /* Deixa os cliques passarem direto pro canvas */
+            pointer-events: none;
         }
 
         .hud-left { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -234,10 +234,10 @@
             <p>
                 Use a <strong>Mão Esquerda</strong> nas <span class="highlight-left">Bolinhas Verdes (Esquerda)</span> e a <strong>Mão Direita</strong> nas <span class="highlight-right">Bolinhas Azuis (Direita)</span>.<br>
                 <span class="highlight-warning">Aviso:</span> Pegar com a mão da cor errada tira -5 pontos e zera seu Combo!<br><br>
-                 Evite as <span class="highlight-danger">Bombas Vermelhas</span> (-30 pontos + Tremor de Tela). Junte as mãos para ativar o <strong>Escudo</strong>.<br><br>
+                 Fique atento ao aviso ⚠️ na base da tela para desviar das <span class="highlight-danger">Bombas Vermelhas</span>.<br><br>
                 <strong>⚡ POWER-UPS (Pegue com qualquer mão):</strong><br>
-                ⭐ <strong>Estrela:</strong> +50 Pontos | ⏳ <strong>Relógio:</strong> Câmera Lenta | ❤️ <strong>Coração:</strong> Recupera 1 Vida | 🧲 <strong>Ímã:</strong> Atrai Bolinhas<br><br>
-                🔊 <strong>Áudio:</strong> O jogo possui sons! Certifique-se de ter a pasta <code>sounds</code> configurada.
+                ⭐ <strong>Estrela:</strong> +50 Pontos | ⏳ <strong>Relógio:</strong> Lento | ❤️ <strong>Coração:</strong> +1 Vida | 🧲 <strong>Ímã:</strong> Atrai<br><br>
+                <em>Pressione ESC durante o jogo para sair da tela cheia e voltar para este menu.</em>
             </p>
             <button id="start-btn" class="btn" disabled>Aguardando Câmera...</button>
             <div id="loading-text" class="loading-text">Carregando IA de visão computacional...</div>
@@ -256,7 +256,6 @@
     <!-- SCRIPTS (JavaScript)                       -->
     <!-- ========================================== -->
     <script>
-        // Elementos do DOM
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('game-canvas');
         const canvasCtx = canvasElement.getContext('2d');
@@ -266,7 +265,6 @@
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
         
-        // Elementos do HUD
         const scoreEl = document.getElementById('score');
         const bombsIconsEl = document.getElementById('bombs-icons');
         const levelEl = document.getElementById('level-display');
@@ -290,7 +288,6 @@
             magnet: new Image()
         };
         
-        // Caminho das imagens (você deve colocar as fotos na pasta 'assets')
         assets.green_bonus.src = 'assets/verde.png';
         assets.blue_bonus.src = 'assets/azul.png';
         assets.bomb.src = 'assets/bomba.png';
@@ -311,19 +308,17 @@
             slow: new Audio('sounds/relogio.mp3'),
             heart: new Audio('sounds/vida.mp3'),
             magnet: new Audio('sounds/ima.mp3'),
-            error: new Audio('sounds/erro.mp3') // Som para toque com a mão errada
+            error: new Audio('sounds/erro.mp3')
         };
 
-        // Configurações da trilha sonora (looping)
         sounds.bgm.loop = true;
-        sounds.bgm.volume = 0.3; // Volume da música mais baixo para destacar os efeitos sonoros
+        sounds.bgm.volume = 0.2;
 
         function playSound(soundKey) {
             const sound = sounds[soundKey];
             if (sound) {
-                // Clonamos o nó para permitir que o som se sobreponha (ex: pegar 3 itens quase juntos)
                 const clone = sound.cloneNode();
-                clone.volume = 0.8; // Volume dos efeitos sonoros
+                clone.volume = 0.8;
                 clone.play().catch(err => console.warn("Áudio não pôde ser reproduzido:", err));
             }
         }
@@ -342,6 +337,7 @@
         let shakeTime = 0;
         let giantHeartTimer = 0;
         let bombWipeTimer = 0;
+        let spawnPauseTimer = 0; // PAUSA DE SPAWN APÓS A BOMBA
         
         let gameObjects = [];
         let particles = [];
@@ -350,7 +346,6 @@
         let cameraReady = false;
         let animationFrameId;
 
-        // Configuração do Canvas
         function resizeCanvas() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
@@ -421,21 +416,61 @@
         camera.start();
 
         // ==========================================
+        // SISTEMA DE TELA CHEIA E RETORNO (ESC)
+        // ==========================================
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(err => console.warn("Erro ao tentar tela cheia:", err));
+            } else if (elem.webkitRequestFullscreen) { /* Safari */
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) { /* IE11 */
+                elem.msRequestFullscreen();
+            }
+        }
+
+        function returnToStartScreen() {
+            if (!isGameRunning && gameOverScreen.classList.contains('hidden') && startScreen.classList.contains('hidden') === false) {
+                return; // Já está na tela inicial
+            }
+
+            isGameRunning = false;
+            sounds.bgm.pause();
+            sounds.bgm.currentTime = 0;
+            cancelAnimationFrame(animationFrameId);
+
+            hudContainer.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+        }
+
+        // Listener nativo: Sempre que a tela cheia for desativada (ex: apertar ESC), volta pro menu
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                returnToStartScreen();
+            }
+        });
+
+        // Fallback de teclado (caso o navegador não tenha entrado em tela cheia mas o jogo já rodou)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen(); // O evento fullscreenchange fará o resto
+                } else {
+                    returnToStartScreen();
+                }
+            }
+        });
+
+        // ==========================================
         // CLASSES DO JOGO
         // ==========================================
 
         class FloatingText {
             constructor(x, y, text, color) {
-                this.x = x;
-                this.y = y;
-                this.text = text;
-                this.color = color;
-                this.life = 1.0;
+                this.x = x; this.y = y; this.text = text; this.color = color; this.life = 1.0;
             }
-            update() {
-                this.y -= 2; 
-                this.life -= 0.02; 
-            }
+            update() { this.y -= 2; this.life -= 0.02; }
             draw(ctx) {
                 ctx.save();
                 ctx.globalAlpha = Math.max(0, this.life);
@@ -453,7 +488,6 @@
         class GameObject {
             constructor() {
                 const rand = Math.random();
-                // 25% Bomba | 30% Verde | 30% Azul | 15% Power-Up
                 if (rand < 0.25) this.type = 'bomb';
                 else if (rand < 0.55) this.type = 'green_bonus';
                 else if (rand < 0.85) this.type = 'blue_bonus';
@@ -465,21 +499,18 @@
                     else this.type = 'magnet';
                 }
 
-                this.radius = this.type === 'bomb' ? 35 : (this.type === 'heart' ? 25 : 30);
+                this.radius = this.type === 'bomb' ? 55 : (this.type === 'heart' ? 40 : 45);
+                
                 this.y = canvasElement.height + this.radius;
                 
-                // LÓGICA DE SPAWN ESQUERDA/DIREITA
                 const halfWidth = canvasElement.width / 2;
-                const safeMargin = this.radius * 2; // Margem para não nascer colado na borda
+                const safeMargin = this.radius * 2; 
 
                 if (this.type === 'green_bonus') {
-                    // Nasce apenas na metade ESQUERDA
                     this.x = Math.random() * (halfWidth - safeMargin) + this.radius;
                 } else if (this.type === 'blue_bonus') {
-                    // Nasce apenas na metade DIREITA
                     this.x = halfWidth + Math.random() * (halfWidth - safeMargin) + this.radius;
                 } else {
-                    // Bombas e Powerups nascem em QUALQUER LUGAR
                     this.x = Math.random() * (canvasElement.width - safeMargin) + this.radius;
                 }
                 
@@ -492,9 +523,20 @@
                 this.zigzagAmp = Math.random() * 50 + 20;
 
                 this.markedForDeletion = false;
+
+                this.isWarning = (this.type === 'bomb');
+                this.warningTimer = this.isWarning ? 90 : 0; 
             }
 
             update() {
+                if (this.isWarning) {
+                    this.warningTimer--;
+                    if (this.warningTimer <= 0) {
+                        this.isWarning = false; 
+                    }
+                    return;
+                }
+
                 let currentSpeed = this.speed;
                 if (slowTimer > 0) currentSpeed *= 0.35; 
 
@@ -507,10 +549,8 @@
                 if (magnetTimer > 0 && (this.type === 'green_bonus' || this.type === 'blue_bonus') && handCursors.length > 0) {
                     let targetType = this.type === 'green_bonus' ? 'Left' : 'Right';
                     let targetHand = handCursors.find(h => h.type === targetType);
-                    
                     if (targetHand) {
-                        const dx = targetHand.x - this.x;
-                        const dy = targetHand.y - this.y;
+                        const dx = targetHand.x - this.x; const dy = targetHand.y - this.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
                         if (dist < 500 && dist > 0) {
                             this.x += (dx / dist) * (currentSpeed * 1.5);
@@ -522,109 +562,61 @@
                 if (this.y + this.radius < -50) {
                     this.markedForDeletion = true;
                     if (this.type === 'green_bonus' || this.type === 'blue_bonus') {
-                        comboCount = 0;
-                        comboMultiplier = 1;
+                        comboCount = 0; comboMultiplier = 1;
                     }
                 }
             }
 
             draw(ctx) {
+                if (this.isWarning) {
+                    const alpha = Math.abs(Math.sin(this.warningTimer * 0.15));
+                    ctx.save();
+                    
+                    let grad = ctx.createLinearGradient(0, canvasElement.height, 0, canvasElement.height - 250);
+                    grad.addColorStop(0, `rgba(244, 67, 54, ${alpha * 0.7})`);
+                    grad.addColorStop(1, 'rgba(244, 67, 54, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(this.x - this.radius * 1.5, canvasElement.height - 250, this.radius * 3, 250);
+                    
+                    ctx.globalAlpha = alpha + 0.3;
+                    ctx.fillStyle = '#F44336';
+                    ctx.font = 'bold 36px "Segoe UI"';
+                    ctx.textAlign = 'center';
+                    ctx.shadowColor = '#000';
+                    ctx.shadowBlur = 5;
+                    ctx.fillText('⚠️', this.x, canvasElement.height - 30);
+                    ctx.restore();
+                    return; 
+                }
+
                 const img = assets[this.type];
                 
-                // Se a imagem existir e já tiver sido carregada com sucesso
                 if (img && img.complete && img.naturalWidth !== 0) {
                     ctx.drawImage(img, this.x - this.radius, this.y - this.radius, this.radius * 2, this.radius * 2);
-                    
-                    // Adiciona um leve brilho por cima das bolinhas normais para manter o "Juiciness"
                     if (this.type === 'green_bonus' || this.type === 'blue_bonus') {
                         ctx.beginPath();
                         ctx.arc(this.x - this.radius/3, this.y - this.radius/3, this.radius / 4, 0, Math.PI * 2);
                         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
                         ctx.fill();
                     }
-                    return; // Retorna para NÃO desenhar os gráficos antigos
+                    return; 
                 }
 
-                // --- FALLBACK (Caso a imagem não seja encontrada, desenha as formas antigas) ---
                 if (this.type === 'green_bonus' || this.type === 'blue_bonus') {
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                    ctx.fillStyle = this.type === 'green_bonus' ? '#4CAF50' : '#2196F3';
-                    ctx.fill();
-                    ctx.lineWidth = 4;
-                    ctx.strokeStyle = this.type === 'green_bonus' ? '#2E7D32' : '#0D47A1';
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.arc(this.x - 8, this.y - 8, this.radius / 4, 0, Math.PI * 2);
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-                    ctx.fill();
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = this.type === 'green_bonus' ? '#4CAF50' : '#2196F3'; ctx.fill();
+                    ctx.lineWidth = 4; ctx.strokeStyle = this.type === 'green_bonus' ? '#2E7D32' : '#0D47A1'; ctx.stroke();
                 } else if (this.type === 'bomb') {
                     ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                    ctx.fillStyle = '#F44336'; ctx.fill();
-                    ctx.lineWidth = 4; ctx.strokeStyle = '#B71C1C'; ctx.stroke();
-                    ctx.lineWidth = 6; ctx.strokeStyle = 'white';
-                    ctx.beginPath(); ctx.moveTo(this.x - 15, this.y - 15); ctx.lineTo(this.x + 15, this.y + 15); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(this.x + 15, this.y - 15); ctx.lineTo(this.x - 15, this.y + 15); ctx.stroke();
+                    ctx.fillStyle = '#F44336'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#B71C1C'; ctx.stroke();
                 } else if (this.type === 'star') {
-                    let rot = Math.PI / 2 * 3;
-                    let step = Math.PI / 5;
-                    ctx.beginPath();
-                    ctx.moveTo(this.x, this.y - this.radius);
-                    for (let i = 0; i < 5; i++) {
-                        ctx.lineTo(this.x + Math.cos(rot) * this.radius, this.y + Math.sin(rot) * this.radius);
-                        rot += step;
-                        ctx.lineTo(this.x + Math.cos(rot) * (this.radius/2), this.y + Math.sin(rot) * (this.radius/2));
-                        rot += step;
-                    }
-                    ctx.lineTo(this.x, this.y - this.radius);
-                    ctx.closePath();
-                    ctx.fillStyle = '#FFEB3B'; ctx.fill();
-                    ctx.lineWidth = 3; ctx.strokeStyle = '#F57F17'; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#FFEB3B'; ctx.fill();
                 } else if (this.type === 'slow') {
-                    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                    ctx.fillStyle = '#00BCD4'; ctx.fill();
-                    ctx.lineWidth = 3; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x, this.y - 15);
-                    ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + 10, this.y + 10);
-                    ctx.lineWidth = 4; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#00BCD4'; ctx.fill();
                 } else if (this.type === 'heart') {
-                    const s = this.radius;
-                    ctx.beginPath();
-                    ctx.moveTo(this.x, this.y + s/4);
-                    ctx.quadraticCurveTo(this.x, this.y - s/2, this.x - s/1.2, this.y - s/2);
-                    ctx.quadraticCurveTo(this.x - s*1.5, this.y - s/2, this.x - s, this.y + s/3);
-                    ctx.quadraticCurveTo(this.x - s/2, this.y + s, this.x, this.y + s*1.2);
-                    ctx.quadraticCurveTo(this.x + s/2, this.y + s, this.x + s, this.y + s/3);
-                    ctx.quadraticCurveTo(this.x + s*1.5, this.y - s/2, this.x + s/1.2, this.y - s/2);
-                    ctx.quadraticCurveTo(this.x, this.y - s/2, this.x, this.y + s/4);
-                    ctx.fillStyle = '#E91E63'; ctx.fill();
-                    ctx.lineWidth = 2; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#E91E63'; ctx.fill();
                 } else if (this.type === 'magnet') {
-                    // Ímã Redesenhado - Formato de U limpo e correto
-                    const s = this.radius * 0.7; 
-                    ctx.save();
-                    ctx.translate(this.x, this.y);
-                    
-                    ctx.beginPath();
-                    ctx.arc(0, -5, s, Math.PI, 0); // Arco interno
-                    ctx.lineTo(s, 15);
-                    ctx.lineTo(s + 10, 15);
-                    ctx.lineTo(s + 10, -5);
-                    ctx.arc(0, -5, s + 10, 0, Math.PI, true); // Arco externo
-                    ctx.lineTo(-(s + 10), 15);
-                    ctx.lineTo(-s, 15);
-                    ctx.closePath();
-                    
-                    ctx.fillStyle = '#9E9E9E'; ctx.fill();
-                    ctx.lineWidth = 2; ctx.strokeStyle = '#424242'; ctx.stroke();
-                    
-                    // Polos vermelho e azul
-                    ctx.fillStyle = '#F44336';
-                    ctx.fillRect(-(s + 10), 5, 10, 10);
-                    ctx.fillStyle = '#2196F3';
-                    ctx.fillRect(s, 5, 10, 10);
-                    
-                    ctx.restore();
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#9E9E9E'; ctx.fill();
                 }
             }
         }
@@ -636,33 +628,14 @@
                 this.speedX = (Math.random() - 0.5) * 15;
                 this.speedY = (Math.random() - 0.5) * 15;
                 this.life = 1.0; 
-                this.shape = 'circle'; // Nova propriedade para suportar estrelas
+                this.shape = 'circle';
                 this.markedForDeletion = false;
             }
-            update() {
-                this.x += this.speedX; this.y += this.speedY;
-                this.life -= 0.04; 
-                if (this.life <= 0) this.markedForDeletion = true;
-            }
+            update() { this.x += this.speedX; this.y += this.speedY; this.life -= 0.04; if (this.life <= 0) this.markedForDeletion = true; }
             draw(ctx) {
-                ctx.globalAlpha = Math.max(0, this.life);
-                ctx.fillStyle = this.color;
-                
+                ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color;
                 if (this.shape === 'star') {
-                    let rot = Math.PI / 2 * 3;
-                    let step = Math.PI / 5;
-                    let r = this.size * 2;
-                    ctx.beginPath();
-                    ctx.moveTo(this.x, this.y - r);
-                    for (let i = 0; i < 5; i++) {
-                        ctx.lineTo(this.x + Math.cos(rot) * r, this.y + Math.sin(rot) * r);
-                        rot += step;
-                        ctx.lineTo(this.x + Math.cos(rot) * (r/2), this.y + Math.sin(rot) * (r/2));
-                        rot += step;
-                    }
-                    ctx.lineTo(this.x, this.y - r);
-                    ctx.closePath();
-                    ctx.fill();
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
                 } else {
                     ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
                 }
@@ -670,89 +643,60 @@
             }
         }
 
-        // ==========================================
-        // LÓGICA PRINCIPAL
-        // ==========================================
-
-        function createExplosion(x, y, color) {
-            for (let i = 0; i < 20; i++) particles.push(new Particle(x, y, color));
-        }
-
+        function createExplosion(x, y, color) { for (let i = 0; i < 20; i++) particles.push(new Particle(x, y, color)); }
         function createStarExplosion(x, y) {
             for (let i = 0; i < 40; i++) {
-                let p = new Particle(x, y, '#FFEB3B');
-                p.shape = 'star';
-                p.speedX *= 1.5; // Explosão mais ampla
-                p.speedY *= 1.5;
-                particles.push(p);
+                let p = new Particle(x, y, '#FFEB3B'); p.shape = 'star'; p.speedX *= 1.5; p.speedY *= 1.5; particles.push(p);
             }
         }
 
         function updateUI() {
-            // Nível 
             level = Math.max(1, Math.floor(Math.max(0, score) / 150) + 1);
+            scoreEl.innerText = score; levelEl.innerText = level; comboEl.innerText = `x${comboMultiplier}`;
             
-            scoreEl.innerText = score;
-            levelEl.innerText = level;
-            comboEl.innerText = `x${comboMultiplier}`;
-            
-            // HUD de Bombas (Sistema Visual de Vidas)
             let bombIconsHTML = '';
-            for (let i = 0; i < 5; i++) {
-                bombIconsHTML += i < bombsHit ? '💥' : '⚪';
-            }
+            for (let i = 0; i < 5; i++) { bombIconsHTML += i < bombsHit ? '💥' : '⚪'; }
             bombsIconsEl.innerText = bombIconsHTML;
             
-            // Animação do Combo
-            if (comboMultiplier > 1) comboContainer.classList.add('active');
-            else comboContainer.classList.remove('active');
+            if (comboMultiplier > 1) comboContainer.classList.add('active'); else comboContainer.classList.remove('active');
 
-            // Atualiza status de Power-ups no Painel Central
             let alerts = [];
             if (slowTimer > 0) alerts.push("⏳ LENTO");
             if (magnetTimer > 0) alerts.push("🧲 ÍMÃ");
-            
-            if (alerts.length > 0) {
-                powerupAlerts.innerText = alerts.join(" | ");
-                powerupAlerts.classList.add('visible');
-            } else {
-                powerupAlerts.classList.remove('visible');
-            }
+            if (alerts.length > 0) { powerupAlerts.innerText = alerts.join(" | "); powerupAlerts.classList.add('visible'); } 
+            else { powerupAlerts.classList.remove('visible'); }
         }
 
         function endGame() {
             isGameRunning = false;
-            sounds.bgm.pause(); // Para a trilha sonora imediatamente
-            hudContainer.classList.add('hidden');
-            gameOverScreen.classList.remove('hidden');
-            finalScoreEl.innerText = score;
-            finalLevelEl.innerText = level;
+            sounds.bgm.pause();
+            hudContainer.classList.add('hidden'); gameOverScreen.classList.remove('hidden');
+            finalScoreEl.innerText = score; finalLevelEl.innerText = level;
             cancelAnimationFrame(animationFrameId);
+            
+            // Opcional: Se quiser sair do fullscreen automaticamente quando der Game Over
+            // if (document.fullscreenElement) document.exitFullscreen();
         }
 
         function startGame() {
+            // Solicitar tela cheia ao iniciar
+            enterFullscreen();
+
             isGameRunning = true;
-            score = 0; bombsHit = 0; level = 1;
-            comboCount = 0; comboMultiplier = 1;
-            slowTimer = 0; magnetTimer = 0; shakeTime = 0;
-            giantHeartTimer = 0; bombWipeTimer = 0;
+            score = 0; bombsHit = 0; level = 1; comboCount = 0; comboMultiplier = 1;
+            slowTimer = 0; magnetTimer = 0; shakeTime = 0; giantHeartTimer = 0; bombWipeTimer = 0; spawnPauseTimer = 0;
             gameObjects = []; particles = []; floatingTexts = [];
             
             updateUI();
-            startScreen.classList.add('hidden');
-            gameOverScreen.classList.add('hidden');
-            hudContainer.classList.remove('hidden');
+            startScreen.classList.add('hidden'); gameOverScreen.classList.add('hidden'); hudContainer.classList.remove('hidden');
             
-            // Inicia a Trilha Sonora do começo
             sounds.bgm.currentTime = 0;
             sounds.bgm.play().catch(err => console.warn("Interação necessária para tocar áudio", err));
-            
             gameLoop();
         }
 
         function checkCollision(obj, hand) {
-            const dx = obj.x - hand.x;
-            const dy = obj.y - hand.y;
+            const dx = obj.x - hand.x; const dy = obj.y - hand.y;
             return Math.sqrt(dx * dx + dy * dy) < (obj.radius + hand.radius);
         }
 
@@ -761,230 +705,153 @@
         function gameLoop() {
             if (!isGameRunning) return;
 
-            // Tremer a Tela
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.save(); 
             
             if (shakeTime > 0) {
-                const shakeX = (Math.random() - 0.5) * 35; // Aumentei o tremor pra bomba
-                const shakeY = (Math.random() - 0.5) * 35;
-                canvasCtx.translate(shakeX, shakeY);
-                shakeTime--;
+                const shakeX = (Math.random() - 0.5) * 35; const shakeY = (Math.random() - 0.5) * 35;
+                canvasCtx.translate(shakeX, shakeY); shakeTime--;
             }
 
-            // Fundo
-            canvasCtx.save();
-            canvasCtx.translate(canvasElement.width, 0);
-            canvasCtx.scale(-1, 1);
-            canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.restore();
+            canvasCtx.save(); canvasCtx.translate(canvasElement.width, 0); canvasCtx.scale(-1, 1);
+            canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height); canvasCtx.restore();
 
-            canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-            canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.4)'; canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
+            // Redução dos Timers
             if (slowTimer > 0) slowTimer--;
             if (magnetTimer > 0) magnetTimer--;
+            if (spawnPauseTimer > 0) spawnPauseTimer--;
 
-            // Lógica do Escudo
             let handsJoined = false;
             if (handCursors.length === 2) {
-                const dx = handCursors[0].x - handCursors[1].x;
-                const dy = handCursors[0].y - handCursors[1].y;
-                if (Math.sqrt(dx * dx + dy * dy) < (handCursors[0].radius + handCursors[1].radius) * 0.9) {
-                    handsJoined = true;
+                const dx = handCursors[0].x - handCursors[1].x; const dy = handCursors[0].y - handCursors[1].y;
+                if (Math.sqrt(dx * dx + dy * dy) < (handCursors[0].radius + handCursors[1].radius) * 0.9) handsJoined = true;
+            }
+
+            // --- SISTEMA DE SPAWN COM PAUSA ---
+            if (spawnPauseTimer <= 0) {
+                frameCounter++;
+                let spawnRate = Math.max(20, 50 - (level * 5)); 
+                if (frameCounter % spawnRate === 0) { 
+                    gameObjects.push(new GameObject());
                 }
             }
 
-            frameCounter++;
-            let spawnRate = Math.max(20, 50 - (level * 5)); 
-            if (frameCounter % spawnRate === 0) { 
-                gameObjects.push(new GameObject());
-            }
-
-            // Atualização e Colisões
             gameObjects.forEach(obj => {
                 obj.update();
                 obj.draw(canvasCtx);
 
-                if (!obj.markedForDeletion && !handsJoined) {
-                    let hit = false;
-                    let hitColor = null;
+                if (!obj.markedForDeletion && !handsJoined && !obj.isWarning) {
+                    let hit = false; let hitColor = null;
 
                     handCursors.forEach(hand => {
                         if (checkCollision(obj, hand) && !hit) {
-                            
                             if (obj.type === 'green_bonus' || obj.type === 'blue_bonus') {
-                                if ((obj.type === 'green_bonus' && hand.type === 'Left') || 
-                                    (obj.type === 'blue_bonus' && hand.type === 'Right')) {
-                                    // Mão Certa
+                                if ((obj.type === 'green_bonus' && hand.type === 'Left') || (obj.type === 'blue_bonus' && hand.type === 'Right')) {
                                     hit = true; hitColor = obj.type === 'green_bonus' ? '#4CAF50' : '#2196F3';
-                                    comboCount++;
-                                    if (comboCount % 5 === 0) comboMultiplier++;
-                                    let points = 10 * comboMultiplier;
-                                    score += points;
-                                    playSound(obj.type); // Toca o som de pegar a bolinha
-                                    floatingTexts.push(new FloatingText(obj.x, obj.y, `+${points}`, hitColor));
-                                    createExplosion(obj.x, obj.y, hitColor);
+                                    comboCount++; if (comboCount % 5 === 0) comboMultiplier++;
+                                    let points = 10 * comboMultiplier; score += points;
+                                    playSound(obj.type);
+                                    floatingTexts.push(new FloatingText(obj.x, obj.y, `+${points}`, hitColor)); createExplosion(obj.x, obj.y, hitColor);
                                 } else {
-                                    // Mão Errada
-                                    hit = true; hitColor = '#FF9800'; 
-                                    score -= 5;
-                                    comboCount = 0; comboMultiplier = 1;
-                                    playSound('error'); // Toca som de erro
-                                    floatingTexts.push(new FloatingText(obj.x, obj.y, "-5 (ERRO!)", hitColor));
-                                    createExplosion(obj.x, obj.y, hitColor);
+                                    hit = true; hitColor = '#FF9800'; score -= 5; comboCount = 0; comboMultiplier = 1;
+                                    playSound('error');
+                                    floatingTexts.push(new FloatingText(obj.x, obj.y, "-5 (ERRO!)", hitColor)); createExplosion(obj.x, obj.y, hitColor);
                                 }
-                            } 
-                            else if (obj.type === 'bomb') {
-                                hit = true; hitColor = '#F44336';
-                                score -= 30; bombsHit += 1;
-                                comboCount = 0; comboMultiplier = 1;
-                                shakeTime = 40; 
-                                bombWipeTimer = 30; // 30 frames de Flash e Wipe
-                                playSound('bomb'); // Toca som da bomba
+                            } else if (obj.type === 'bomb') {
+                                hit = true; hitColor = '#F44336'; score -= 30; bombsHit += 1; comboCount = 0; comboMultiplier = 1;
+                                shakeTime = 40; bombWipeTimer = 30; 
+                                spawnPauseTimer = 150; 
+                                playSound('bomb');
                                 
-                                // MEGA EXPLOSÃO: Apaga tudo da tela!
                                 gameObjects.forEach(o => o.markedForDeletion = true);
-                                floatingTexts = []; // Limpa textos antigos
+                                floatingTexts = []; 
                                 floatingTexts.push(new FloatingText(canvasElement.width/2, canvasElement.height/2, "KABOOM! -30", hitColor));
-                            }
-                            else {
-                                hit = true;
-                                playSound(obj.type); // Toca o som do respectivo power-up dinamicamente
+                            } else {
+                                hit = true; playSound(obj.type);
                                 if (obj.type === 'star') {
-                                    hitColor = '#FFEB3B';
-                                    let points = 50 * comboMultiplier;
-                                    score += points;
-                                    floatingTexts.push(new FloatingText(obj.x, obj.y, `JACKPOT +${points}!`, hitColor));
-                                    createStarExplosion(obj.x, obj.y); // Efeito visual novo
+                                    hitColor = '#FFEB3B'; let points = 50 * comboMultiplier; score += points;
+                                    floatingTexts.push(new FloatingText(obj.x, obj.y, `JACKPOT +${points}!`, hitColor)); createStarExplosion(obj.x, obj.y); 
                                 } else if (obj.type === 'slow') {
-                                    hitColor = '#00BCD4';
-                                    slowTimer = 300; 
-                                    floatingTexts.push(new FloatingText(obj.x, obj.y, "LENTO!", hitColor));
-                                    createExplosion(obj.x, obj.y, hitColor);
+                                    hitColor = '#00BCD4'; slowTimer = 300; 
+                                    floatingTexts.push(new FloatingText(obj.x, obj.y, "LENTO!", hitColor)); createExplosion(obj.x, obj.y, hitColor);
                                 } else if (obj.type === 'heart') {
-                                    hitColor = '#E91E63';
-                                    if (bombsHit > 0) bombsHit--;
-                                    giantHeartTimer = 60; // Inicia a animação do coração gigante
+                                    hitColor = '#E91E63'; if (bombsHit > 0) bombsHit--; giantHeartTimer = 60; 
                                     createExplosion(obj.x, obj.y, hitColor);
                                 } else if (obj.type === 'magnet') {
-                                    hitColor = '#9C27B0';
-                                    magnetTimer = 300;
-                                    floatingTexts.push(new FloatingText(obj.x, obj.y, "ÍMÃ ATIVADO!", hitColor));
-                                    createExplosion(obj.x, obj.y, hitColor);
+                                    hitColor = '#9C27B0'; magnetTimer = 300;
+                                    floatingTexts.push(new FloatingText(obj.x, obj.y, "ÍMÃ ATIVADO!", hitColor)); createExplosion(obj.x, obj.y, hitColor);
                                 }
                             }
                         }
                     });
 
-                    if (hit) {
-                        obj.markedForDeletion = true;
-                        updateUI();
-                    }
+                    if (hit) { obj.markedForDeletion = true; updateUI(); }
                 }
             });
 
             gameObjects = gameObjects.filter(obj => !obj.markedForDeletion);
+            particles.forEach(p => { p.update(); p.draw(canvasCtx); }); particles = particles.filter(p => !p.markedForDeletion);
+            floatingTexts.forEach(ft => { ft.update(); ft.draw(canvasCtx); }); floatingTexts = floatingTexts.filter(ft => ft.life > 0);
 
-            particles.forEach(p => { p.update(); p.draw(canvasCtx); });
-            particles = particles.filter(p => !p.markedForDeletion);
-
-            floatingTexts.forEach(ft => { ft.update(); ft.draw(canvasCtx); });
-            floatingTexts = floatingTexts.filter(ft => ft.life > 0);
-
-            // Desenho das Mãos com AURA MAGNÉTICA
             handCursors.forEach(hand => {
                 let colorHex = hand.type === 'Left' ? '#4CAF50' : '#2196F3';
                 let colorRgba = hand.type === 'Left' ? 'rgba(76, 175, 80, 0.3)' : 'rgba(33, 150, 243, 0.3)';
 
-                if (handsJoined) {
-                    colorHex = '#9E9E9E'; colorRgba = 'rgba(158, 158, 158, 0.5)';
-                }
+                if (handsJoined) { colorHex = '#9E9E9E'; colorRgba = 'rgba(158, 158, 158, 0.5)'; }
 
                 canvasCtx.beginPath(); ctx = canvasCtx;
                 ctx.arc(hand.x, hand.y, hand.radius, 0, Math.PI * 2);
-                ctx.fillStyle = colorRgba; ctx.fill();
-                ctx.lineWidth = 3; ctx.strokeStyle = colorHex; ctx.stroke();
+                ctx.fillStyle = colorRgba; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = colorHex; ctx.stroke();
                 
-                // Efeito visual do Ímã ativado (brilho e ondas)
                 if (magnetTimer > 0 && !handsJoined) {
                     let pulse = Math.abs(Math.sin(frameCounter * 0.1)) * 15;
-                    
-                    // Aura sólida
-                    ctx.beginPath();
-                    ctx.arc(hand.x, hand.y, hand.radius + 15 + pulse, 0, Math.PI * 2);
-                    ctx.fillStyle = hand.type === 'Left' ? 'rgba(76, 175, 80, 0.4)' : 'rgba(33, 150, 243, 0.4)';
-                    ctx.fill();
-                    
-                    // Anel expandindo
-                    ctx.beginPath();
-                    ctx.arc(hand.x, hand.y, hand.radius + 20 + (frameCounter * 2) % 40, 0, Math.PI * 2);
-                    ctx.strokeStyle = hand.type === 'Left' ? 'rgba(76, 175, 80, 0.8)' : 'rgba(33, 150, 243, 0.8)';
-                    ctx.lineWidth = 4;
-                    ctx.stroke();
+                    ctx.beginPath(); ctx.arc(hand.x, hand.y, hand.radius + 15 + pulse, 0, Math.PI * 2);
+                    ctx.fillStyle = hand.type === 'Left' ? 'rgba(76, 175, 80, 0.4)' : 'rgba(33, 150, 243, 0.4)'; ctx.fill();
+                    ctx.beginPath(); ctx.arc(hand.x, hand.y, hand.radius + 20 + (frameCounter * 2) % 40, 0, Math.PI * 2);
+                    ctx.strokeStyle = hand.type === 'Left' ? 'rgba(76, 175, 80, 0.8)' : 'rgba(33, 150, 243, 0.8)'; ctx.lineWidth = 4; ctx.stroke();
                 }
             });
             
             if (handsJoined && handCursors.length === 2) {
-                const midX = (handCursors[0].x + handCursors[1].x) / 2;
-                const midY = (handCursors[0].y + handCursors[1].y) / 2;
+                const midX = (handCursors[0].x + handCursors[1].x) / 2; const midY = (handCursors[0].y + handCursors[1].y) / 2;
                 canvasCtx.font = "bold 24px 'Segoe UI'"; canvasCtx.fillStyle = "#fff"; canvasCtx.textAlign = "center";
                 canvasCtx.fillText("🛡️ ESCUDO ATIVO", midX, midY - Math.max(handCursors[0].radius, handCursors[1].radius) - 20);
                 canvasCtx.beginPath(); canvasCtx.moveTo(handCursors[0].x, handCursors[0].y); canvasCtx.lineTo(handCursors[1].x, handCursors[1].y);
                 canvasCtx.lineWidth = 5; canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; canvasCtx.stroke();
             }
 
-            // --- EFEITOS ESPECIAIS OVERLAY ---
-
-            // Desenha a Vida Gigante pulsando
             if (giantHeartTimer > 0) {
-                const centerX = canvasElement.width / 2;
-                const centerY = canvasElement.height / 2;
-                const pulseScale = 1 + Math.abs(Math.sin(giantHeartTimer * 0.1)) * 0.3; 
-                const s = 80 * pulseScale;
+                const centerX = canvasElement.width / 2; const centerY = canvasElement.height / 2;
+                const pulseScale = 1 + Math.abs(Math.sin(giantHeartTimer * 0.1)) * 0.3; const s = 80 * pulseScale;
                 
-                canvasCtx.save();
-                canvasCtx.globalAlpha = giantHeartTimer / 60; // Fade out no final
+                canvasCtx.save(); canvasCtx.globalAlpha = giantHeartTimer / 60; 
                 
                 if (assets.heart.complete && assets.heart.naturalWidth !== 0) {
-                    // Desenha a imagem png da Vida gigante
-                    canvasCtx.shadowColor = '#FF4081';
-                    canvasCtx.shadowBlur = 50;
+                    canvasCtx.shadowColor = '#FF4081'; canvasCtx.shadowBlur = 50;
                     canvasCtx.drawImage(assets.heart, centerX - s, centerY - s, s * 2, s * 2);
                 } else {
-                    // Fallback: Desenha a forma do coração antiga
-                    canvasCtx.beginPath();
-                    canvasCtx.moveTo(centerX, centerY + s/4);
+                    canvasCtx.beginPath(); canvasCtx.moveTo(centerX, centerY + s/4);
                     canvasCtx.quadraticCurveTo(centerX, centerY - s/2, centerX - s/1.2, centerY - s/2);
                     canvasCtx.quadraticCurveTo(centerX - s*1.5, centerY - s/2, centerX - s, centerY + s/3);
                     canvasCtx.quadraticCurveTo(centerX - s/2, centerY + s, centerX, centerY + s*1.2);
                     canvasCtx.quadraticCurveTo(centerX + s/2, centerY + s, centerX + s, centerY + s/3);
                     canvasCtx.quadraticCurveTo(centerX + s*1.5, centerY - s/2, centerX + s/1.2, centerY - s/2);
                     canvasCtx.quadraticCurveTo(centerX, centerY - s/2, centerX, centerY + s/4);
-                    canvasCtx.fillStyle = '#E91E63';
-                    canvasCtx.shadowColor = '#FF4081';
-                    canvasCtx.shadowBlur = 50;
-                    canvasCtx.fill();
+                    canvasCtx.fillStyle = '#E91E63'; canvasCtx.shadowColor = '#FF4081'; canvasCtx.shadowBlur = 50; canvasCtx.fill();
                 }
                 
-                canvasCtx.fillStyle = 'white';
-                canvasCtx.font = 'bold 45px "Segoe UI"';
-                canvasCtx.textAlign = 'center';
-                canvasCtx.shadowBlur = 0;
-                canvasCtx.fillText("+1 VIDA", centerX, centerY + 15);
-                canvasCtx.restore();
-                
+                canvasCtx.fillStyle = 'white'; canvasCtx.font = 'bold 45px "Segoe UI"'; canvasCtx.textAlign = 'center';
+                canvasCtx.shadowBlur = 0; canvasCtx.fillText("+1 VIDA", centerX, centerY + 15); canvasCtx.restore();
                 giantHeartTimer--;
             }
 
-            // Efeito Flash do Bomb Wipe
             if (bombWipeTimer > 0) {
-                canvasCtx.fillStyle = `rgba(255, 255, 255, ${bombWipeTimer / 30})`; // Brancão ofuscante
+                canvasCtx.fillStyle = `rgba(255, 255, 255, ${bombWipeTimer / 30})`; 
                 canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-                
-                canvasCtx.fillStyle = `rgba(244, 67, 54, ${(bombWipeTimer / 30) * 0.5})`; // Vermelho sangrento por cima
+                canvasCtx.fillStyle = `rgba(244, 67, 54, ${(bombWipeTimer / 30) * 0.5})`; 
                 canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-                
                 bombWipeTimer--;
             }
 
